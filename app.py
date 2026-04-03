@@ -3,70 +3,88 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tensor_generator import generate_field_tensor
 
-# Configuration de l'interface
-st.set_page_config(page_title="Byte NDT - Expertise 1D", layout="wide")
+# Configuration de la page
+st.set_page_config(page_title="Byte NDT - Interface Opérateur", layout="wide")
 
-st.title("🛡️ Byte NDT : Système Expert d'Inspection (Twin 1D)")
-st.write("Analyse quantitative des indications par interaction Onde-Matière")
+# --- STYLE ET TRADUCTION ---
+lang = st.radio("Sélectionnez la langue / Select Language", ["FR", "EN"], horizontal=True)
 
-# --- BARRE LATÉRALE : PARAMÈTRES ---
-st.sidebar.header("Configuration de l'Examen")
-angle = st.sidebar.slider("Angle de tir (°)", 0, 75, 45)
+if lang == "FR":
+    title = "🛡️ Système d'Expertise Ultrasonore - Racine LSB 941"
+    header_beam = "Configuration du Faisceau"
+    label_angle = "Angle de tir (°)"
+    header_defect = "Caractérisation de l'Indication"
+    label_type = "Type de défaut"
+    label_pos_x = "Position Latérale X (mm)"
+    label_pos_z = "Profondeur Z (mm)"
+    label_size = "Taille (mm)"
+    btn_run = "🚀 Lancer le Diagnostic"
+    msg_sizing = "💡 Note : L'isocontour jaune définit la zone de Sizing à -6dB."
+    footer_npy = "Données .NPY prêtes pour le Machine Learning Global."
+else:
+    title = "🛡️ Ultrasonic Expert System - LSB 941 Root"
+    header_beam = "Beam Configuration"
+    label_angle = "Beam Angle (°)"
+    header_defect = "Indication Characterization"
+    label_type = "Defect Type"
+    label_pos_x = "Lateral Position X (mm)"
+    label_pos_z = "Depth Z (mm)"
+    label_size = "Defect Size (mm)"
+    btn_run = "🚀 Start Diagnosis"
+    msg_sizing = "💡 Note: The yellow isocontour defines the -6dB Sizing area."
+    footer_npy = "Data .NPY ready for Global Machine Learning."
+
+st.title(title)
+
+# --- BARRE LATÉRALE ---
+st.sidebar.header(header_beam)
+angle = st.sidebar.slider(label_angle, 0, 75, 45)
 
 st.sidebar.markdown("---")
-st.sidebar.header("Cible & Défaut")
-defect_type = st.sidebar.selectbox("Type d'indication", ["Aucun", "Inclusion (Void / Born)", "Entaille (EDM / Kirchhoff)"])
+st.sidebar.header(header_defect)
+defect_options = ["Aucun / None", "Inclusion (Void - Born)", "Entaille (EDM - Kirchhoff)"]
+defect_type = st.sidebar.selectbox(label_type, defect_options)
 
-if defect_type != "Aucun":
-    def_x = st.sidebar.slider("Position Latérale (mm)", -25, 25, -12)
-    def_z = st.sidebar.slider("Profondeur (mm)", 5, 38, 20)
-    def_size = st.sidebar.slider("Taille de l'indication (mm)", 0.2, 5.0, 1.0)
+# MISE À JOUR PROFONDEUR : On passe à 200 mm
+if defect_type != "Aucun / None":
+    def_x = st.sidebar.slider(label_pos_x, -50, 50, 0)
+    def_z = st.sidebar.slider(label_pos_z, 0, 200, 100) # Profondeur jusqu'à 200 mm
+    def_size = st.sidebar.slider(label_size, 0.5, 10.0, 2.0)
 
-# --- MOTEUR DE CALCUL ET AFFICHAGE ---
-if st.button("🚀 Lancer la Simulation & Export NPY"):
-    with st.spinner('Calcul des fonctions de Green en cours...'):
-        
-        # 1. Génération du tenseur de base
+# --- CALCUL ET AFFICHAGE ---
+if st.button(btn_run):
+    with st.spinner('Simulation...'):
+        # On génère le faisceau (ajusté pour la nouvelle profondeur)
         tensor, yy, zz = generate_field_tensor(angle)
         
-        # 2. Logique d'interaction (Physique de la détection)
-        if defect_type != "Aucun":
-            dist = np.sqrt((yy - def_x)**2 + (zz - def_z)**2)
-            mask = dist < def_size
-            # Simulation du saut d'amplitude (Réponse de l'indication)
-            gain = 2.5 if "EDM" in defect_type else 1.5
-            tensor[mask] = np.max(np.abs(tensor)) * gain
+        # Logique de détection
+        if defect_type != "Aucun / None":
+            dist = np.sqrt((yy - def_x)**2 + (zz - (def_z/5))**2) # Scale ajusté pour l'affichage
+            mask = dist < (def_size/2)
+            tensor[mask] = np.max(np.abs(tensor)) * 2.5
 
-        # 3. Conversion Logarithmique (Décibels)
+        # Conversion en dB
         amplitude = np.abs(tensor)
         A_max = np.max(amplitude)
-        # Calcul des dB par rapport au max du faisceau
         amplitude_db = 20 * np.log10(amplitude / (A_max + 1e-12))
 
-        # 4. Création de la figure Expert
-        fig, ax = plt.subplots(figsize=(10, 7))
+        # Affichage Expert
+        fig, ax = plt.subplots(figsize=(10, 8))
         
-        # Fond : Cartographie en dB (limité à -20dB pour le contraste)
-        im = ax.imshow(amplitude_db, extent=[-30, 30, 40, 0], cmap='magma', vmin=-20, vmax=0)
-        cbar = plt.colorbar(im)
-        cbar.set_label("Amplitude relative (dB)")
+        # L'échelle de profondeur (extent) est mise à jour à 200 mm
+        im = ax.imshow(amplitude_db, extent=[-50, 50, 200, 0], cmap='viridis', vmin=-20, vmax=0)
+        plt.colorbar(im, label="Amplitude (dB)")
 
-        # AJOUT DES ISOCONTOURS (Lignes de mesure)
-        # Niveaux normatifs : -3dB (rouge), -6dB (jaune), -12dB (blanc)
+        # Isocontours normatifs
         contours = ax.contour(amplitude_db, levels=[-12, -6, -3], 
-                              extent=[-30, 30, 40, 0], 
-                              colors=['white', 'yellow', 'red'], 
-                              linewidths=1.2)
-        ax.clabel(contours, inline=True, fontsize=9, fmt='%1.0f dB')
+                              extent=[-50, 50, 200, 0], 
+                              colors=['white', 'yellow', 'red'])
+        ax.clabel(contours, inline=True, fontsize=10, fmt='%1.0f dB')
 
-        # Habillage du graphique
-        ax.set_title(f"Faisceau à {angle}° - Analyse {defect_type}")
-        ax.set_xlabel("Position (mm)")
-        ax.set_ylabel("Profondeur (mm)")
+        ax.set_title(f"Simulation PAUT @ {angle}° - Depth 200mm")
+        ax.set_xlabel("X (mm)")
+        ax.set_ylabel("Depth / Profondeur (mm)")
         
-        # Affichage dans Streamlit
         st.pyplot(fig)
-        
-        # Confirmation d'export pour le Machine Learning
-        st.success("✅ Analyse terminée. Dataset .NPY généré pour le ML Global.")
-        st.info("💡 Note : L'isocontour jaune (-6dB) définit la zone de 'Sizing' pour l'opérateur.")
+        st.info(msg_sizing)
+        st.success(f"✅ {footer_npy}")
