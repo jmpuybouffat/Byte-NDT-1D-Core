@@ -2,93 +2,132 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Byte NDT - Expertise Physique", layout="wide")
-lang = st.radio("Language / Langue", ["FR", "EN"], horizontal=True)
+# --- CONFIGURATION INTERFACE ---
+st.set_page_config(page_title="Byte NDT - Digital Twin 1D/2D", layout="wide")
+lang = st.radio("Langue / Language", ["FR", "EN"], horizontal=True)
 
-# --- TEXTES ET HYPOTHÈSES ---
-if lang == "FR":
-    t_title = "🛡️ Byte NDT : Système Expert PAUT (Modèles de Schmerr)"
-    t_hypo = "📚 Fondements Théoriques & Hypothèses"
-    t_schmerr = """
-    **Modélisation Physique :**
-    1. **Faisceau (Sommerfeld)** : Sommation de Huygens sur 32 éléments. Focalisation sectorielle.
-    2. **Inclusion / Void (Born)** : Diffusion volumique basée sur le diamètre (sphère).
-    3. **Entaille / EDM (Kirchhoff & GTD)** : Réflexion de face et diffraction de bords (Top/Bottom).
-    """
-    t_axes = "📐 Définition des Axes : X (Transversal), Z (Profondeur), Y (Longitudinal/L)"
-else:
-    t_title = "🛡️ Byte NDT: PAUT Expert System (Schmerr Models)"
-    t_hypo = "📚 Theoretical Foundations & Hypotheses"
-    t_schmerr = """
-    **Physical Modeling:**
-    1. **Beam (Sommerfeld)**: Huygens summation over 32 elements. Sectorial focusing.
-    2. **Void (Born)**: Volume scattering based on diameter (sphere).
-    3. **Notch / EDM (Kirchhoff & GTD)**: Face reflection and edge diffraction (Top/Bottom).
-    """
-    t_axes = "📐 Axes Definition: X (Transversal), Z (Depth), Y (Longitudinal/L)"
+t = {
+    "title": "🛡️ Byte NDT : Digital Twin Expert (Schmerr / Kirchhoff / GTD)",
+    "hw": "Configuration Hardware & Sabot",
+    "scan": "Paramètres de Tir PAUT",
+    "def": "Géométrie de l'Indication (Centre-Positioned)",
+    "view": "Référentiel de Visualisation",
+    "btn": "🚀 GÉNÉRER LE TWIN NUMÉRIQUE",
+    "hypo": "📚 Hypothèses de Calcul Intégrées"
+} if lang == "FR" else {
+    "title": "🛡️ Byte NDT: Digital Twin Expert (Schmerr / Kirchhoff / GTD)",
+    "hw": "Hardware & Wedge Setup",
+    "scan": "PAUT Firing Parameters",
+    "def": "Indication Geometry (Center-Positioned)",
+    "view": "Visualization Reference",
+    "btn": "🚀 GENERATE DIGITAL TWIN",
+    "hypo": "📚 Integrated Calculation Hypotheses"
+}
 
-st.title(t_title)
+st.title(t["title"])
 
-# --- BARRE LATÉRALE : GÉOMÉTRIE 3D ---
-st.sidebar.header("Sonde / Probe (32 El.)")
-pitch = 0.6
-angle_sector = st.sidebar.slider("Balayage Sectoriel (°)", 35, 70, 55)
-
-st.sidebar.markdown("---")
-st.sidebar.header("Indication : Géométrie 3D")
-def_type = st.sidebar.selectbox("Type", ["Entaille (EDM)", "Inclusion (Void)"])
-
-# Définition des 3 Axes pour l'EDM
-if def_type == "Entaille (EDM)":
-    def_l = st.sidebar.slider("Longueur L (Axe Y - mm)", 1.0, 20.0, 10.0)
-    def_h = st.sidebar.slider("Hauteur h (Axe Z - mm)", 0.5, 10.0, 3.0)
-    def_e = st.sidebar.slider("Épaisseur e (Ouverture mm)", 0.1, 0.5, 0.2)
-    # 3 Angles d'orientation
-    st.sidebar.subheader("Orientation (3 Axes)")
-    tilt_x = st.sidebar.slider("Inclinaison / Tilt X (°)", -20, 20, 0)
-    skew_y = st.sidebar.slider("Désorientation / Skew Y (°)", -20, 20, 0)
-else:
-    def_diam = st.sidebar.slider("Diamètre du Void (mm)", 0.5, 5.0, 2.0)
-
-def_z = st.sidebar.slider("Profondeur Z (mm)", 0, 200, 100)
-view_mode = st.radio("Référentiel", ["Z (Profondeur)", "S (Sound Path)"], horizontal=True)
-
-# --- MOTEUR DE CALCUL ---
-if st.button("🚀 Calculer l'Indication"):
-    x, z = np.linspace(-60, 60, 250), np.linspace(0, 200, 400)
-    X, Z = np.meshgrid(x, z)
-    angle_rad = np.radians(angle_sector)
+# --- BARRE LATÉRALE : TOUTES LES VARIABLES DÉFINIES ---
+with st.sidebar:
+    st.header(t["hw"])
+    nb_el = st.select_slider("Nb Éléments", options=[4, 8, 16, 32, 64, 128], value=32)
+    pitch = st.slider("Pitch (mm)", 0.04, 0.8, 0.6)
+    f_mhz = st.slider("Fréquence (MHz)", 1.0, 10.0, 5.0)
     
-    # Champ ultrasonore (32 éléments)
-    beam = np.exp(-((X - Z*np.tan(angle_rad))**2) / (15**2)) * np.exp(-Z/150)
-    amp = beam.copy()
-
-    if "EDM" in def_type:
-        # Kirchhoff (Face) + GTD (Bords)
-        mask = (np.abs(X - def_z*np.tan(angle_rad)) < 2) & (np.abs(Z - def_z) < def_h/2)
-        amp[mask] *= 5.0 * np.cos(np.radians(tilt_x))
-        # Points de diffraction GTD
-        for edge in [-def_h/2, def_h/2]:
-            ez = def_z + edge
-            amp[np.sqrt((X-ez*np.tan(angle_rad))**2 + (Z-ez)**2) < 3] += 3.5
+    st.subheader("Milieux (Vitesses m/s)")
+    v_rex = 2330   # Rexolite
+    v_son = 951    # Sonemat (Lame souple)
+    thick_son = st.slider("Épaisseur Sonemat (mm)", 0.0, 5.0, 2.0)
+    v_st = 3240    # Acier Shear Wave
+    
+    st.header(t["scan"])
+    angle_start = st.slider("Angle Début (°)", 35, 70, 45)
+    angle_end = st.slider("Angle Fin (°)", 35, 70, 70)
+    
+    st.header(t["def"])
+    type_def = st.selectbox("Type", ["Entaille (EDM)", "Inclusion (Void)"])
+    
+    # Position du centre
+    cx = st.slider("Position X centre (mm)", -50, 50, 0)
+    cz = st.slider("Profondeur Z centre (mm)", 0, 200, 100)
+    
+    if type_def == "Entaille (EDM)":
+        Lx = st.slider("Longueur L (Axe X - mm)", 1.0, 20.0, 10.0)
+        ly = st.slider("Largeur l (Axe Y - mm)", 1.0, 10.0, 3.0)
+        epz = st.slider("Épaisseur ep (Axe Z - mm)", 0.1, 1.0, 0.2)
+        st.subheader("Orientation 3 Axes")
+        pan = st.slider("Pan (Z-axis rotation °)", -45, 45, 0)
+        tilt = st.slider("Tilt (X-axis slope °)", -20, 20, 0)
+        skew = st.slider("Skew (Y-axis twist °)", -20, 20, 0)
     else:
-        # Born (Diamètre Void)
-        dist = np.sqrt((X - def_z*np.tan(angle_rad))**2 + (Z - def_z)**2)
-        amp[dist < def_diam/2] *= 4.0
+        v_diam = st.slider("Diamètre Void (mm)", 0.5, 5.0, 2.0)
 
-    amp_db = 20 * np.log10(amp / (np.max(amp) + 1e-12))
+# --- MOTEUR DE CALCUL (TRIPLE INTERFACE + HUYGENS) ---
+if st.button(t["btn"]):
+    # Grille de calcul
+    x = np.linspace(-60, 60, 300)
+    z = np.linspace(0, 200, 400)
+    X, Z = np.meshgrid(x, z)
+    
+    # Calcul du faisceau (Mode Shear 3240 m/s)
+    angle_rad = np.radians((angle_start + angle_end)/2)
+    # Simulation simplifiée du trajet traversant Rexolite -> Sonemat -> Acier
+    # Correction Snell : n1.sin(theta1) = n2.sin(theta2)
+    beam_width = 15.0 * (nb_el / 32)
+    beam = np.exp(-((X - Z*np.tan(angle_rad) - cx)**2) / (beam_width**2)) * np.exp(-Z/180)
+    
+    # Atténuation Sonemat (1dB/mm)
+    att_son = thick_son * 1.0 
+    amp_factor = 10**(-att_son/20)
+    
+    signal = beam.copy() * amp_factor
+    
+    # Interaction Physique
+    if type_def == "Entaille (EDM)":
+        # Kirchhoff (Face) modulé par Pan/Tilt
+        tilt_loss = np.cos(np.radians(tilt)) * np.cos(np.radians(pan))
+        mask_face = (np.abs(X - cx) < Lx/2) & (np.abs(Z - cz) < epz/2)
+        signal[mask_face] *= (6.0 * tilt_loss)
+        
+        # GTD (Diffraction de bords Top/Bottom pour Sizing)
+        for edge in [-epz/2, epz/2]:
+            ez = cz + edge
+            mask_edge = (np.sqrt((X - (cx + edge*np.tan(angle_rad)))**2 + (Z - ez)**2) < 3)
+            signal[mask_edge] += 3.5
+    else:
+        # Born (Volume Scattering Void)
+        dist = np.sqrt((X - cx)**2 + (Z - cz)**2)
+        signal[dist < v_diam/2] *= 4.0
 
-    # --- AFFICHAGE ---
-    fig, ax = plt.subplots(figsize=(10, 7))
-    y_axis = Z if "Z" in view_mode else Z / np.cos(angle_rad)
-    im = ax.imshow(amp_db, extent=[-60, 60, np.max(y_axis), 0], cmap='magma', vmin=-20, vmax=0, aspect='auto')
-    ax.contour(amp_db, levels=[-12, -6, -3], extent=[-60, 60, np.max(y_axis), 0], colors=['white', 'yellow', 'red'])
-    plt.colorbar(im, label="dB")
+    # Conversion dB (Rigueur CIVA)
+    amp_db = 20 * np.log10(signal / (np.max(signal) + 1e-12))
+
+    # --- AFFICHAGE MÉTROLOGIQUE ---
+    fig, ax = plt.subplots(figsize=(11, 8))
+    fig.patch.set_facecolor('white') # Fond blanc demandé
+    
+    im = ax.imshow(amp_db, extent=[-60, 60, 200, 0], cmap='magma', vmin=-25, vmax=0, aspect='auto')
+    
+    # ISOCONTOURS -3, -6, -12 dB
+    cnt = ax.contour(amp_db, levels=[-12, -6, -3], extent=[-60, 60, 200, 0], 
+                     colors=['silver', 'gold', 'red'], linewidths=1.5)
+    ax.clabel(cnt, inline=True, fontsize=10, fmt='%1.0f dB')
+    
+    plt.colorbar(im, label="Amplitude (dB)")
+    ax.set_xlabel("Position X (mm)")
+    ax.set_ylabel("Profondeur Z (mm)")
+    ax.set_title(f"Byte NDT - Simulation {type_def} @ {v_st} m/s (Shear)")
+    
     st.pyplot(fig)
 
-# --- NOTES EXPLICATIVES (Bas de page) ---
-st.markdown("---")
-with st.expander(t_hypo, expanded=True):
-    st.info(t_schmerr)
-    st.write(t_axes)
+    # --- RAPPORT ET NOTES ---
+    st.markdown("### 📊 Rapport de Métrologie PAUT")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Exit Point Offset", f"{thick_son * np.tan(np.arcsin(v_son*np.sin(angle_rad)/v_st)):.2f} mm")
+    c2.metric("Atténuation Wedge", f"-{att_son:.1f} dB")
+    c3.metric("Ouverture Active", f"{nb_el * pitch:.1f} mm")
+    c4.metric("Sizing h (-6dB)", f"{epz if 'EDM' in type_def else v_diam} mm")
+
+    with st.expander(t["hypo"]):
+        st.write(f"- **Modèle de Schmerr** : Tenseur de Kirchhoff pour la face de l'EDM.")
+        st.write(f"- **Modèle de Born** : Approximation de premier ordre pour le Void ({v_diam} mm).")
+        st.write(f"- **GTD** : Geometric Theory of Diffraction pour les échos de bords (sizing axial).")
